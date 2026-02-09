@@ -1,0 +1,133 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║                    SHEBAMILES EMPLOYEE MANAGEMENT SYSTEM              ║
+║                         QUICK INSTALLATION GUIDE                      ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+📋 QUICK START (5 MINUTES)
+
+1️⃣  EXTRACT FILES
+   - Extract shebamiles-ems folder to: C:\xampp\htdocs\
+
+2️⃣  START XAMPP
+   - Open XAMPP Control Panel
+   - Start Apache
+   - Start MySQL
+
+3️⃣  IMPORT DATABASE
+   - Go to: http://localhost/phpmyadmin
+   - Click "Import"
+   - Choose: database/shebamiles_db.sql
+   - Click "Go"
+
+4️⃣  ACCESS SYSTEM
+   - Open browser
+   - Go to: http://localhost/shebamiles-ems
+   - Login with:
+     Username: admin
+     Password: admin123
+
+✅ THAT'S IT! YOU'RE READY TO GO!
+
+═══════════════════════════════════════════════════════════════════════
+
+🎨 THEME: Orange & White
+🏢 COMPANY: Shebamiles
+📚 PROJECT: IFT 301 Group Project
+
+═══════════════════════════════════════════════════════════════════════
+
+🔑 DEFAULT LOGIN CREDENTIALS
+
+   ADMIN ACCOUNT:
+   • Username: admin
+   • Password: admin123
+   • Role: Administrator
+
+   ⚠️  IMPORTANT: Change password after first login!
+
+═══════════════════════════════════════════════════════════════════════
+
+📁 FOLDER STRUCTURE
+
+   shebamiles-ems/
+   ├── css/              → Stylesheets
+   ├── js/               → JavaScript files
+   ├── php/              → PHP utilities
+   ├── includes/         → Core functions
+   ├── includes/badge.php → Floating brand badge
+   ├── database/         → SQL file
+   ├── assets/           → Images & media
+   ├── login.php         → Login page
+   ├── dashboard.php     → Main dashboard
+   ├── employees.php     → Employee management
+   ├── departments.php   → Department management
+   ├── attendance.php    → Attendance tracking
+   ├── leaves.php        → Leave management
+   ├── payroll.php       → Payroll management
+   ├── performance.php   → Performance reviews
+   ├── users.php         → User management
+   └── employee-details.php → Employee profile view
+
+═══════════════════════════════════════════════════════════════════════
+
+✨ KEY FEATURES
+
+   ✓ Employee Management (Add, Edit, View, Delete)
+   ✓ Department Management
+   ✓ Attendance Tracking
+   ✓ Leave Request System
+   ✓ Role-Based Access Control
+   ✓ Beautiful Dashboard with Analytics
+   ✓ Modern Responsive Design
+   ✓ Secure Authentication
+
+═══════════════════════════════════════════════════════════════════════
+
+🔧 TROUBLESHOOTING
+
+   Problem: Can't access login page
+   Solution: Ensure Apache is running in XAMPP
+            Check URL: http://localhost/shebamiles-ems
+
+   Problem: Database connection error
+   Solution: Make sure MySQL is running
+            Verify database was imported correctly
+
+   Problem: Login doesn't work
+   Solution: Use credentials: admin / admin123
+            Clear browser cache
+
+   Problem: Page looks broken
+   Solution: Clear browser cache
+            Verify css/style.css exists
+
+═══════════════════════════════════════════════════════════════════════
+
+📱 SYSTEM REQUIREMENTS
+
+   • PHP 7.4 or higher
+   • MySQL 5.7 or higher
+   • Apache 2.4 or higher
+   • Modern web browser
+   • XAMPP/WAMP/LAMP
+
+═══════════════════════════════════════════════════════════════════════
+
+🎓 FOR YOUR IFT 301 PROJECT
+
+   This is a complete, production-ready employee management system
+   with:
+   - Clean, modern UI/UX
+   - Proper database structure
+   - Security best practices
+   - Role-based access
+   - Full CRUD operations
+   - Professional design
+
+   Everything is ready to demonstrate and submit! 🚀
+
+═══════════════════════════════════════════════════════════════════════
+
+📖 Need more details? Check README.md for comprehensive documentation.
+
+═══════════════════════════════════════════════════════════════════════
