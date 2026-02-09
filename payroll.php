@@ -1,11 +1,20 @@
 <?php
-require_once 'includes/auth.php';
-requireLogin();
-requirePermission('view_payroll');
+// PAYROLL MANAGEMENT PAGE
+// PURPOSE: Manage employee salary processing and payment tracking
+// PERMISSIONS: Requires 'view_payroll' permission (admin only)
+// FEATURES: Add payroll records, calculate net salary, track payment status, record payments
+// WORKFLOW: Calculate salary → Record payroll → Track payment → Mark as paid
 
+// STEP 1: Include auth and require login with permission
+require_once 'includes/auth.php';
+requireLogin();  // Redirect if not authenticated
+requirePermission('view_payroll');  // Redirect if lacks payroll permission (admin only)
+
+// STEP 2: Initialize database connection
 $db = new Database();
 $conn = $db->getConnection();
 
+// STEP 3: Check database connection
 if ($conn === null) {
     $error = 'Database connection unavailable. Please import database/shebamiles_db.sql.';
 }
@@ -13,17 +22,25 @@ if ($conn === null) {
 $success = '';
 $error = '';
 
-// Handle form submission for adding payroll
+// STEP 4: HANDLE FORM SUBMISSIONS (Add/Update Payroll)
+// Process POST requests for payroll operations
 if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    
+    // ACTION: Add new payroll record
     if ($_POST['action'] === 'add_payroll') {
         try {
-            $stmt = $conn->prepare("INSERT INTO payroll (employee_id, pay_period_start, pay_period_end, basic_salary, bonuses, deductions, net_salary, payment_date, payment_status) 
-                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            
+            // STEP 4a: Calculate net salary from components
+            // FORMULA: Net Salary = Basic Salary + Bonuses - Deductions
+            // All values converted to float for accurate calculation
             $basicSalary = floatval($_POST['basic_salary']);
             $bonuses = floatval($_POST['bonuses'] ?? 0);
             $deductions = floatval($_POST['deductions'] ?? 0);
             $netSalary = $basicSalary + $bonuses - $deductions;
+            
+            // STEP 4b: Insert payroll record with calculated net salary
+            // Stores: employee_id, pay period dates, salary components, payment status
+            $stmt = $conn->prepare("INSERT INTO payroll (employee_id, pay_period_start, pay_period_end, basic_salary, bonuses, deductions, net_salary, payment_date, payment_status) 
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
             
             $stmt->execute([
                 $_POST['employee_id'],
@@ -33,8 +50,8 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
                 $bonuses,
                 $deductions,
                 $netSalary,
-                $_POST['payment_date'] ?? null,
-                $_POST['payment_status']
+                $_POST['payment_date'] ?? null,  // Optional payment date (null if pending)
+                $_POST['payment_status']  // Either 'pending' or 'paid'
             ]);
             
             $success = "Payroll record added successfully!";
@@ -43,12 +60,17 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
         }
     }
     
+    // ACTION: Update payment status
+    // Used to mark a pending payment as 'paid' and record payment date
     if ($_POST['action'] === 'update_status') {
         try {
+            // STEP 4c: Update payment status and auto-set payment_date
+            // If status = 'paid': Sets payment_date to today (NOW())
+            // If status = 'pending': Sets payment_date to null
             $stmt = $conn->prepare("UPDATE payroll SET payment_status = ?, payment_date = ? WHERE payroll_id = ?");
             $stmt->execute([
                 $_POST['status'],
-                $_POST['status'] === 'paid' ? date('Y-m-d') : null,
+                $_POST['status'] === 'paid' ? date('Y-m-d') : null,  // Auto-date if marked paid
                 $_POST['payroll_id']
             ]);
             
@@ -59,7 +81,8 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
     }
 }
 
-// Handle delete
+// STEP 5: HANDLE DELETE REQUEST
+// Delete a payroll record from database
 if ($conn !== null && isset($_GET['delete'])) {
     try {
         $stmt = $conn->prepare("DELETE FROM payroll WHERE payroll_id = ?");
@@ -70,47 +93,69 @@ if ($conn !== null && isset($_GET['delete'])) {
     }
 }
 
-// Get all payroll records
+// STEP 6: FETCH PAYROLL RECORDS WITH SEARCH/FILTER
+// Display all payroll records with optional filtering by status and search by employee
 try {
     if ($conn === null) {
         throw new Exception('Database connection unavailable. Please import database/shebamiles_db.sql.');
     }
-    $filter = isset($_GET['status']) ? $_GET['status'] : '';
-    $search = isset($_GET['search']) ? sanitize($_GET['search']) : '';
     
+    // STEP 6a: Get filter and search parameters
+    $filter = isset($_GET['status']) ? $_GET['status'] : '';  // 'pending' or 'paid' or empty
+    $search = isset($_GET['search']) ? sanitize($_GET['search']) : '';  // Search by employee name/code
+    
+    // STEP 6b: Build query to fetch all payroll records with employee and department details
+    // JOINs: employees (to get name/code), departments (to get department name)
     $query = "SELECT p.*, e.employee_code, e.first_name, e.last_name, d.department_name
               FROM payroll p
               JOIN employees e ON p.employee_id = e.employee_id
               LEFT JOIN departments d ON e.department_id = d.department_id
               WHERE 1=1";
     
+    // STEP 6c: Initialize params array for prepared statement
     $params = [];
     
+    // STEP 6d: Add status filter if provided
+    // Filters to show only 'pending' or 'paid' payroll records
     if ($filter) {
         $query .= " AND p.payment_status = ?";
         $params[] = $filter;
     }
     
+    // STEP 6e: Add search filter if provided
+    // Search by first name, last name, or employee code (case-insensitive)
     if ($search) {
         $query .= " AND (e.first_name LIKE ? OR e.last_name LIKE ? OR e.employee_code LIKE ?)";
         $searchParam = "%$search%";
         $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
     }
     
+    // STEP 6f: Sort results by creation date (newest first)
     $query .= " ORDER BY p.created_at DESC";
     
+    // Execute query with prepared statement
     $stmt = $conn->prepare($query);
     $stmt->execute($params);
     $payrollRecords = $stmt->fetchAll();
     
-    // Get employees for dropdown
+    // STEP 6g: Fetch all employees for the "Add Payroll" dropdown
     $stmt = $conn->query("SELECT employee_id, employee_code, first_name, last_name, salary FROM employees ORDER BY first_name");
     $employees = $stmt->fetchAll();
     
-    // Calculate statistics
+    // STEP 6h: Calculate payroll statistics using array functions
+    // Totals: sum of net_salary for paid and pending records
+    // Counts: number of paid vs pending records
+    
+    // Total paid amount (sum of net_salary where status = 'paid')
     $totalPaid = array_sum(array_map(fn($r) => $r['payment_status'] === 'paid' ? $r['net_salary'] : 0, $payrollRecords));
+    
+    // Total pending amount (sum of net_salary where status = 'pending')
     $totalPending = array_sum(array_map(fn($r) => $r['payment_status'] === 'pending' ? $r['net_salary'] : 0, $payrollRecords));
+    
+    // Count of paid records
     $paidCount = count(array_filter($payrollRecords, fn($r) => $r['payment_status'] === 'paid'));
+    
+    // Count of pending records
     $pendingCount = count(array_filter($payrollRecords, fn($r) => $r['payment_status'] === 'pending'));
     
 } catch(PDOException $e) {

@@ -1,8 +1,18 @@
 <?php
+// SIDEBAR NAVIGATION COMPONENT
+// Purpose: Display main navigation menu for all pages
+// This component is included in every authenticated page
+
+// GET CURRENT PAGE NAME to highlight active menu item
+// basename() extracts filename from full path (e.g., dashboard.php)
 $currentPage = basename($_SERVER['PHP_SELF']);
+
+// GET CURRENT USER INFO for display in sidebar footer
+// Returns array with user_id, username, email, role, employee_id, full_name
 $user = getCurrentUser();
 ?>
 <aside class="sidebar">
+    <!-- SIDEBAR HEADER: Logo/branding -->
     <div class="sidebar-header">
         <a href="dashboard.php" class="sidebar-brand">
             Shebamiles
@@ -10,8 +20,10 @@ $user = getCurrentUser();
         </a>
     </div>
     
+    <!-- MAIN NAVIGATION MENU -->
     <ul class="sidebar-menu">
-        <!-- Dashboard (All Users) -->
+        <!-- DASHBOARD LINK (All Users) -->
+        <!-- Always visible - shows overview and statistics -->
         <li>
             <a href="dashboard.php" class="<?php echo $currentPage === 'dashboard.php' ? 'active' : ''; ?>">
                 <i class="fas fa-home"></i>
@@ -19,7 +31,8 @@ $user = getCurrentUser();
             </a>
         </li>
 
-        <!-- Employees (All Users, but limited view for employees) -->
+        <!-- EMPLOYEES LINK (Permission: view_employees) -->
+        <!-- Admins see all employees, Employees see directory only -->
         <?php if (hasPermission('view_employees')): ?>
         <li>
             <a href="employees.php" class="<?php echo $currentPage === 'employees.php' ? 'active' : ''; ?>">
@@ -29,7 +42,8 @@ $user = getCurrentUser();
         </li>
         <?php endif; ?>
 
-        <!-- Departments (All Users, but view-only for employees) -->
+        <!-- DEPARTMENTS LINK (Permission: view_departments) -->
+        <!-- View company departments and structure -->
         <?php if (hasPermission('view_departments')): ?>
         <li>
             <a href="departments.php" class="<?php echo $currentPage === 'departments.php' ? 'active' : ''; ?>">
@@ -39,7 +53,8 @@ $user = getCurrentUser();
         </li>
         <?php endif; ?>
 
-        <!-- Attendance (All Users, but view-only own attendance for employees) -->
+        <!-- ATTENDANCE LINK (Permission: view_attendance) -->
+        <!-- Mark/view daily attendance records -->
         <?php if (hasPermission('view_attendance')): ?>
         <li>
             <a href="attendance.php" class="<?php echo $currentPage === 'attendance.php' ? 'active' : ''; ?>">
@@ -49,7 +64,8 @@ $user = getCurrentUser();
         </li>
         <?php endif; ?>
 
-        <!-- Leave Requests (All Users, but own requests only for employees) -->
+        <!-- LEAVE REQUESTS LINK (Permission: view_leaves) -->
+        <!-- Submit, view, and approve leave requests -->
         <?php if (hasPermission('view_leaves')): ?>
         <li>
             <a href="leaves.php" class="<?php echo $currentPage === 'leaves.php' ? 'active' : ''; ?>">
@@ -59,7 +75,8 @@ $user = getCurrentUser();
         </li>
         <?php endif; ?>
 
-        <!-- Documents (All Users) -->
+        <!-- DOCUMENTS LINK (Permission: view_documents) -->
+        <!-- Upload and manage employee documents -->
         <?php if (hasPermission('view_documents')): ?>
         <li>
             <a href="documents.php" class="<?php echo $currentPage === 'documents.php' ? 'active' : ''; ?>">
@@ -69,7 +86,8 @@ $user = getCurrentUser();
         </li>
         <?php endif; ?>
 
-        <!-- Announcements (All Users) -->
+        <!-- ANNOUNCEMENTS LINK (All Users) -->
+        <!-- View company-wide announcements and news -->
         <li>
             <a href="announcements.php" class="<?php echo $currentPage === 'announcements.php' ? 'active' : ''; ?>">
                 <i class="fas fa-bullhorn"></i>
@@ -77,7 +95,8 @@ $user = getCurrentUser();
             </a>
         </li>
 
-        <!-- Holiday Calendar (All Users) -->
+        <!-- HOLIDAY CALENDAR LINK (Permission: view_holidays) -->
+        <!-- View company holidays and non-working days -->
         <?php if (hasPermission('view_holidays')): ?>
         <li>
             <a href="holiday-calendar.php" class="<?php echo $currentPage === 'holiday-calendar.php' ? 'active' : ''; ?>">
@@ -87,15 +106,17 @@ $user = getCurrentUser();
         </li>
         <?php endif; ?>
 
-        <!-- ADMIN-ONLY SECTION -->
+        <!-- ADMIN-ONLY SECTION DIVIDER & HEADER -->
         <?php if (hasRole('admin')): ?>
+        <!-- Visual separator between user and admin sections -->
         <li style="border-top: 1px solid rgba(255,255,255,0.1); margin: 10px 0; padding-top: 10px;">
             <span style="font-size: 0.75rem; color: rgba(255,255,255,0.6); text-transform: uppercase; font-weight: 700; padding: 0 1rem; display: block; margin-bottom: 0.5rem;">
                 🔐 Admin Panel
             </span>
         </li>
 
-        <!-- Payroll (Admin Only) -->
+        <!-- PAYROLL LINK (Admin Only - Permission: view_payroll) -->
+        <!-- Generate and manage payroll records -->
         <?php if (hasPermission('view_payroll')): ?>
         <li>
             <a href="payroll.php" class="<?php echo $currentPage === 'payroll.php' ? 'active' : ''; ?>">
@@ -105,7 +126,8 @@ $user = getCurrentUser();
         </li>
         <?php endif; ?>
 
-        <!-- Performance (Admin Only) -->
+        <!-- PERFORMANCE LINK (Admin Only - Permission: view_performance) -->
+        <!-- Create and manage employee performance reviews -->
         <?php if (hasPermission('view_performance')): ?>
         <li>
             <a href="performance.php" class="<?php echo $currentPage === 'performance.php' ? 'active' : ''; ?>">
@@ -115,7 +137,8 @@ $user = getCurrentUser();
         </li>
         <?php endif; ?>
 
-        <!-- User Management (Admin Only) -->
+        <!-- USER MANAGEMENT LINK (Admin Only - Permission: view_users) -->
+        <!-- Create and manage user accounts -->
         <?php if (hasPermission('view_users')): ?>
         <li>
             <a href="users.php" class="<?php echo $currentPage === 'users.php' ? 'active' : ''; ?>">
@@ -125,7 +148,8 @@ $user = getCurrentUser();
         </li>
         <?php endif; ?>
 
-        <!-- Settings (Admin Only) -->
+        <!-- SYSTEM SETTINGS LINK (Admin Only - Permission: view_settings) -->
+        <!-- Configure company settings and preferences -->
         <?php if (hasPermission('view_settings')): ?>
         <li>
             <a href="settings.php" class="<?php echo $currentPage === 'settings.php' ? 'active' : ''; ?>">
@@ -135,7 +159,8 @@ $user = getCurrentUser();
         </li>
         <?php endif; ?>
 
-        <!-- Activity Log (Admin Only) -->
+        <!-- ACTIVITY LOG LINK (Admin Only - Permission: view_activity_log) -->
+        <!-- View audit trail of all system actions -->
         <?php if (hasPermission('view_activity_log')): ?>
         <li>
             <a href="activity-log.php" class="<?php echo $currentPage === 'activity-log.php' ? 'active' : ''; ?>">
@@ -145,15 +170,23 @@ $user = getCurrentUser();
         </li>
         <?php endif; ?>
         <?php endif; ?>
+        <!-- END OF ADMIN SECTION -->
     </ul>
     
+    <!-- SIDEBAR FOOTER: User profile card -->
     <div class="sidebar-user">
+        <!-- USER AVATAR: First letter of user's full name -->
         <div class="sidebar-user-avatar">
             <?php echo strtoupper(substr($user['full_name'], 0, 1)); ?>
         </div>
+        
+        <!-- USER INFO SECTION -->
         <div class="sidebar-user-info">
+            <!-- User's full name -->
             <h4><?php echo htmlspecialchars($user['full_name']); ?></h4>
+            <!-- User's role (Admin, Manager, Employee) -->
             <p><?php echo getRoleDisplayName($user['role']); ?></p>
+            <!-- Link to user's profile page -->
             <a href="profile.php" style="font-size: 0.75rem; color: rgba(255,255,255,0.8); text-decoration: none; margin-top: 0.25rem; display: inline-block;">
                 <i class="fas fa-user-circle"></i> View Profile
             </a>

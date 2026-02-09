@@ -1,11 +1,20 @@
 <?php
-require_once 'includes/auth.php';
-requireLogin();
-requirePermission('view_attendance');
+// ATTENDANCE MANAGEMENT PAGE
+// PURPOSE: Display and manage daily attendance records
+// PERMISSIONS: Requires 'view_attendance' permission
+// FEATURES: Mark attendance, view records by date, calculate daily statistics
+// WORKFLOW: Select date → View/manage attendance → Calculate stats → Display table
 
+// STEP 1: Include auth and require login with permission
+require_once 'includes/auth.php';
+requireLogin();  // Redirect if not authenticated
+requirePermission('view_attendance');  // Redirect if lacks attendance permission
+
+// STEP 2: Initialize database connection
 $db = new Database();
 $conn = $db->getConnection();
 
+// STEP 3: Check database connection
 if ($conn === null) {
     $error = 'Database connection unavailable. Please import database/shebamiles_db.sql.';
 }
@@ -13,10 +22,16 @@ if ($conn === null) {
 $success = '';
 $error = '';
 
-// Handle mark attendance
+// STEP 4: HANDLE MARK ATTENDANCE (POST Request)
+// Insert new attendance record or update existing record for same date/employee
 if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($_POST['action'] === 'mark_attendance') {
         try {
+            // IMPORTANT: This uses INSERT...ON DUPLICATE KEY UPDATE (upsert pattern)
+            // PURPOSE: Create new record if doesn't exist, update if already exists for date+employee
+            // MySQL will automatically detect unique key conflict and update instead of insert
+            // BENEFIT: No need to check if record exists first, single query handles both cases
+            
             $stmt = $conn->prepare("INSERT INTO attendance (employee_id, date, clock_in, clock_out, status, notes) 
                                    VALUES (?, ?, ?, ?, ?, ?)
                                    ON DUPLICATE KEY UPDATE 
@@ -25,11 +40,13 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
                                    status = VALUES(status),
                                    notes = VALUES(notes)");
             
+            // Execute with attendance data
+            // Some fields like clock_in/clock_out are optional (uses null if empty)
             $stmt->execute([
                 $_POST['employee_id'],
                 $_POST['date'],
-                $_POST['clock_in'] ?: null,
-                $_POST['clock_out'] ?: null,
+                $_POST['clock_in'] ?: null,  // Null if time not provided
+                $_POST['clock_out'] ?: null,  // Null if time not provided
                 $_POST['status'],
                 sanitize($_POST['notes'])
             ]);
@@ -41,13 +58,19 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
     }
 }
 
-// Get attendance records
+// STEP 5: FETCH ATTENDANCE RECORDS FOR SELECTED DATE
+// Role-based visibility: Admins see all employees, regular employees see only themselves
 try {
     if ($conn === null) {
         throw new Exception('Database connection unavailable. Please import database/shebamiles_db.sql.');
     }
+    
+    // STEP 5a: Get date filter from query parameter (defaults to today)
     $date = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
     
+    // STEP 5b: Build base query to fetch attendance records for selected date
+    // JOINs ensure we get employee details (code, name) and department info
+    // LEFT JOINs keep records even if employee lacks department assignment
     $attendanceQuery = "SELECT a.*, e.employee_code, e.first_name, e.last_name, d.department_name
                            FROM attendance a
                            JOIN employees e ON a.employee_id = e.employee_id
@@ -56,34 +79,44 @@ try {
     
     $attendanceParams = [$date];
     
-    // Non-admins can only see their own attendance
+    // STEP 5c: Apply role-based visibility filter
+    // Regular employees (without 'view_all_attendance') see only their own records
+    // Admins see all employee records for the date
     if (!hasPermission('view_all_attendance')) {
+        // User is not admin: filter to only their attendance
         $attendanceQuery .= " AND e.user_id = ?";
         $attendanceParams[] = $_SESSION['user_id'];
     }
     
+    // STEP 5d: Sort results by employee name
     $attendanceQuery .= " ORDER BY e.first_name, e.last_name";
     
+    // Execute query with prepared statement (prevents SQL injection)
     $stmt = $conn->prepare($attendanceQuery);
     $stmt->execute($attendanceParams);
     $attendanceRecords = $stmt->fetchAll();
     
-    // Get employees for dropdown - admins see all, employees only see themselves
+    // STEP 5e: Fetch employee list for "Mark Attendance" dropdown
+    // Different list based on permission: admins see all, employees see only self
     $employeeQuery = "SELECT e.*, d.department_name 
                          FROM employees e 
                          LEFT JOIN departments d ON e.department_id = d.department_id";
     
     if (!hasPermission('view_all_attendance')) {
+        // Regular employee: only show themselves in dropdown
         $employeeQuery .= " WHERE e.user_id = ?";
         $stmt = $conn->prepare($employeeQuery);
         $stmt->execute([$_SESSION['user_id']]);
     } else {
+        // Admin: show all employees, sorted by name
         $stmt = $conn->prepare($employeeQuery . " ORDER BY e.first_name, e.last_name");
         $stmt->execute();
     }
     $allEmployees = $stmt->fetchAll();
     
-    // Calculate stats for the day
+    // STEP 5f: Calculate daily statistics from attendance records
+    // Uses array_filter() with arrow functions to count records by status
+    // Each filter counts records where status matches the condition
     $present = count(array_filter($attendanceRecords, fn($r) => $r['status'] === 'present'));
     $absent = count(array_filter($attendanceRecords, fn($r) => $r['status'] === 'absent'));
     $late = count(array_filter($attendanceRecords, fn($r) => $r['status'] === 'late'));

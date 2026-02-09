@@ -1,33 +1,48 @@
 <?php
-require_once 'includes/auth.php';
-requireLogin();
-requirePermission('view_employees');
+// EMPLOYEE MANAGEMENT PAGE
+// PURPOSE: Display list of all employees, handle add/edit/delete operations
+// PERMISSIONS: Requires 'view_employees' permission (admin/manager only)
+// WORKFLOW: Display table → Search/Filter → Add Modal → Submit → Database → Refresh table
 
+// STEP 1: Include authentication functions and require user to be logged in with permission
+require_once 'includes/auth.php';
+requireLogin();  // Redirect to login if not authenticated
+requirePermission('view_employees');  // Redirect if user lacks 'view_employees' permission
+
+// STEP 2: Initialize database connection
 $db = new Database();
 $conn = $db->getConnection();
 
+// STEP 3: Check if database connection is available
 if ($conn === null) {
     $error = 'Database connection unavailable. Please import database/shebamiles_db.sql.';
 }
 
+// STEP 4: Initialize success and error message variables
 $success = '';
 $error = '';
 
-// Handle form submission for adding/editing employee
+// STEP 5: HANDLE FORM SUBMISSIONS (Add/Edit/Delete operations)
+// Check if request is POST with 'action' parameter set
 if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    // ACTION: Add new employee
+    // PERMISSION: Requires 'create_employee' permission
     if ($_POST['action'] === 'add_employee' && hasPermission('create_employee')) {
         try {
-            // First create user account
+            // STEP 5a: Create user account in users table (required for login)
+            // Sanitize inputs and hash password using bcrypt for security
             $username = sanitize($_POST['username']);
             $email = sanitize($_POST['email']);
             $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
             $role = sanitize($_POST['role']);
             
+            // Insert user record and get the auto-generated user_id
             $stmt = $conn->prepare("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)");
             $stmt->execute([$username, $email, $password, $role]);
             $userId = $conn->lastInsertId();
             
-            // Then create employee record
+            // STEP 5b: Create employee record linked to user account
+            // This 2-step process ensures both authentication and employee data are created
             $stmt = $conn->prepare("INSERT INTO employees (user_id, employee_code, first_name, last_name, date_of_birth, gender, phone, address, city, state, country, department_id, position, hire_date, employment_type, salary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             
             $stmt->execute([
@@ -42,7 +57,7 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
                 sanitize($_POST['city']),
                 sanitize($_POST['state']),
                 sanitize($_POST['country']),
-                $_POST['department_id'] ?: null,
+                $_POST['department_id'] ?: null,  // Department is optional
                 sanitize($_POST['position']),
                 $_POST['hire_date'],
                 $_POST['employment_type'],
@@ -56,16 +71,21 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
     }
 }
 
-// Handle delete
+// STEP 6: HANDLE DELETE REQUEST
+// Triggered by delete action from query parameter (e.g., ?delete=5)
+// PERMISSION: Requires 'delete_employee' permission
 if ($conn !== null && isset($_GET['delete']) && hasPermission('delete_employee')) {
     try {
         $employeeId = $_GET['delete'];
-        // Get user_id first
+        
+        // STEP 6a: Fetch user_id for this employee (needed for cascading delete)
+        // Users table has cascade delete rules, so deleted user cascades to employees
         $stmt = $conn->prepare("SELECT user_id FROM employees WHERE employee_id = ?");
         $stmt->execute([$employeeId]);
         $userId = $stmt->fetch()['user_id'];
         
-        // Delete user (will cascade to employee)
+        // STEP 6b: Delete user record (this cascades delete to employee record)
+        // Deleting from users table removes the corresponding employee due to foreign key constraints
         $stmt = $conn->prepare("DELETE FROM users WHERE user_id = ?");
         $stmt->execute([$userId]);
         
@@ -75,40 +95,55 @@ if ($conn !== null && isset($_GET['delete']) && hasPermission('delete_employee')
     }
 }
 
-// Get all employees
+// STEP 7: FETCH EMPLOYEES WITH SEARCH AND FILTERING
+// Display all employees in table, with optional search and department filtering
 try {
     if ($conn === null) {
         throw new Exception('Database connection unavailable. Please import database/shebamiles_db.sql.');
     }
+    
+    // STEP 7a: Get search and filter parameters from query string
+    // These come from the search form submission
     $search = isset($_GET['search']) ? sanitize($_GET['search']) : '';
     $departmentFilter = isset($_GET['department']) ? $_GET['department'] : '';
     
+    // STEP 7b: Build base query with JOINs to get complete employee information
+    // LEFT JOINs ensure employees without dept/user records still display
+    // Selects: employee details + department name + user email/role
     $query = "SELECT e.*, d.department_name, u.email, u.role 
               FROM employees e 
               LEFT JOIN departments d ON e.department_id = d.department_id 
               LEFT JOIN users u ON e.user_id = u.user_id 
               WHERE 1=1";
     
+    // STEP 7c: Initialize parameters array for prepared statement
     $params = [];
     
+    // STEP 7d: Add search filter if provided
+    // Search by first_name, last_name, or employee_code (case-insensitive LIKE)
+    // Uses %search% pattern for substring matching
     if ($search) {
         $query .= " AND (e.first_name LIKE ? OR e.last_name LIKE ? OR e.employee_code LIKE ?)";
         $searchParam = "%$search%";
         $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
     }
     
+    // STEP 7e: Add department filter if provided
+    // Filters to show only employees in selected department
     if ($departmentFilter) {
         $query .= " AND e.department_id = ?";
         $params[] = $departmentFilter;
     }
     
+    // STEP 7f: Sort results by creation date (newest first)
     $query .= " ORDER BY e.created_at DESC";
     
+    // STEP 7g: Execute query with prepared statement (prevents SQL injection)
     $stmt = $conn->prepare($query);
     $stmt->execute($params);
     $employees = $stmt->fetchAll();
     
-    // Get departments for filter
+    // STEP 7h: Fetch all departments for the filter dropdown
     $stmt = $conn->query("SELECT * FROM departments ORDER BY department_name");
     $departments = $stmt->fetchAll();
     

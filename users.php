@@ -1,27 +1,42 @@
 <?php
-require_once 'includes/auth.php';
-requireLogin();
-requirePermission('view_users');
+// USER MANAGEMENT PAGE
+// PURPOSE: Manage system user accounts and access control
+// PERMISSIONS: Admin only (requires 'view_users' permission)
+// FEATURES: Create/edit/delete users, reset passwords, manage user roles/status
+// WORKFLOW: List users → Filter/search → Add/Edit/Delete → Manage permissions
 
+// STEP 1: Include auth and require login with admin permission
+require_once 'includes/auth.php';
+requireLogin();  // Redirect if not authenticated
+requirePermission('view_users');  // Redirect if not admin
+
+// STEP 2: Initialize database connection
 $db = new Database();
 $conn = $db->getConnection();
 
+// STEP 3: Check database connection
 if ($conn === null) {
     $error = 'Database connection unavailable. Please import database/shebamiles_db.sql.';
 }
 
 $success = '';
 $error = '';
-// Handle form submission for adding/editing user
+// STEP 4: HANDLE FORM SUBMISSIONS (Add/Edit/Reset/Delete)
+// Process POST requests for user account management
 if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    
+    // ACTION: Create new user account
     if ($_POST['action'] === 'add_user') {
         try {
+            // Sanitize inputs to prevent XSS
             $username = sanitize($_POST['username']);
             $email = sanitize($_POST['email']);
+            // Hash password with bcrypt for security
             $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
-            $role = sanitize($_POST['role']);
-            $status = $_POST['status'];
+            $role = sanitize($_POST['role']);  // admin, manager, or employee
+            $status = $_POST['status'];  // active or inactive
             
+            // Insert new user account
             $stmt = $conn->prepare("INSERT INTO users (username, email, password, role, status) VALUES (?, ?, ?, ?, ?)");
             $stmt->execute([$username, $email, $password, $role, $status]);
             
@@ -31,8 +46,10 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
         }
     }
     
+    // ACTION: Update existing user account
     if ($_POST['action'] === 'update_user') {
         try {
+            // Update user: email, role, and status (not password)
             $stmt = $conn->prepare("UPDATE users SET email = ?, role = ?, status = ? WHERE user_id = ?");
             $stmt->execute([
                 sanitize($_POST['email']),
@@ -47,8 +64,10 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
         }
     }
     
+    // ACTION: Reset user password (admin-initiated)
     if ($_POST['action'] === 'reset_password') {
         try {
+            // Hash the new password with bcrypt
             $newPassword = password_hash($_POST['new_password'], PASSWORD_DEFAULT);
             $stmt = $conn->prepare("UPDATE users SET password = ? WHERE user_id = ?");
             $stmt->execute([$newPassword, $_POST['user_id']]);
@@ -60,15 +79,18 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
     }
 }
 
-// Handle delete
+// STEP 5: HANDLE DELETE REQUEST
+// Delete user account from system
 if ($conn !== null && isset($_GET['delete'])) {
     try {
         $userId = $_GET['delete'];
         
-        // Don't allow deleting yourself
+        // SECURITY: Prevent admin from deleting their own account
+        // This keeps at least one admin in the system
         if ($userId == getCurrentUser()['user_id']) {
             $error = "You cannot delete your own account!";
         } else {
+            // Delete user from users table (cascades to employees if foreign key set)
             $stmt = $conn->prepare("DELETE FROM users WHERE user_id = ?");
             $stmt->execute([$userId]);
             $success = "User deleted successfully!";
@@ -78,15 +100,20 @@ if ($conn !== null && isset($_GET['delete'])) {
     }
 }
 
-// Get all users
+// STEP 6: FETCH ALL USERS WITH SEARCH/FILTER
+// Display all users with optional filtering by role, status, and search
 try {
     if ($conn === null) {
         throw new Exception('Database connection unavailable. Please import database/shebamiles_db.sql.');
     }
+    
+    // Get search, role filter, and status filter parameters
     $search = isset($_GET['search']) ? sanitize($_GET['search']) : '';
     $roleFilter = isset($_GET['role']) ? $_GET['role'] : '';
     $statusFilter = isset($_GET['status']) ? $_GET['status'] : '';
     
+    // Build query to fetch users with linked employee data
+    // JOINs get employee details (code, name) if user has employee record
     $query = "SELECT u.*, e.employee_code, e.first_name, e.last_name 
               FROM users u 
               LEFT JOIN employees e ON u.user_id = e.user_id 
@@ -94,29 +121,34 @@ try {
     
     $params = [];
     
+    // Add search filter (search username, email, first name, last name)
     if ($search) {
         $query .= " AND (u.username LIKE ? OR u.email LIKE ? OR e.first_name LIKE ? OR e.last_name LIKE ?)";
         $searchParam = "%$search%";
         $params = array_merge($params, [$searchParam, $searchParam, $searchParam, $searchParam]);
     }
     
+    // Add role filter (admin, manager, employee)
     if ($roleFilter) {
         $query .= " AND u.role = ?";
         $params[] = $roleFilter;
     }
     
+    // Add status filter (active, inactive)
     if ($statusFilter) {
         $query .= " AND u.status = ?";
         $params[] = $statusFilter;
     }
     
+    // Sort by creation date (newest first)
     $query .= " ORDER BY u.created_at DESC";
     
+    // Execute query with prepared statement
     $stmt = $conn->prepare($query);
     $stmt->execute($params);
     $users = $stmt->fetchAll();
     
-    // Calculate statistics
+    // Calculate user statistics
     $totalUsers = count($users);
     $activeUsers = count(array_filter($users, fn($u) => $u['status'] === 'active'));
     $admins = count(array_filter($users, fn($u) => $u['role'] === 'admin'));

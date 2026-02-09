@@ -1,11 +1,20 @@
 <?php
+// USER PROFILE PAGE
+// PURPOSE: Display and edit user profile information and personal settings
+// PERMISSIONS: For logged-in users only
+// FEATURES: View personal details, edit profile, change password, view leave balance
+// WORKFLOW: Display profile → Edit personal details → Change password
+
+// STEP 1: Include auth and helpers, require login
 require_once 'includes/auth.php';
 require_once 'includes/helpers.php';
-requireLogin();
+requireLogin();  // Redirect if not authenticated
 
+// STEP 2: Initialize database connection
 $db = new Database();
 $conn = $db->getConnection();
 
+// STEP 3: Check database connection
 if ($conn === null) {
     header('Location: login.php?db=missing');
     exit();
@@ -13,30 +22,37 @@ if ($conn === null) {
 
 $success = '';
 $error = '';
-$user = getCurrentUser();
+$user = getCurrentUser();  // Get current logged-in user info
 
-// Get employee details
+// STEP 4: FETCH USER PROFILE DATA
+// Retrieve employee details and user account information
 try {
+    // Fetch employee details with department info
     $stmt = $conn->prepare("SELECT e.*, d.department_name 
                            FROM employees e 
                            LEFT JOIN departments d ON e.department_id = d.department_id 
                            WHERE e.user_id = ?");
     $stmt->execute([$user['user_id']]);
-    $employee = $stmt->fetch();
+    $employee = $stmt->fetch();  // Contains employee personal/work data
     
-    // Get user info
+    // Fetch user account info
     $stmt = $conn->prepare("SELECT * FROM users WHERE user_id = ?");
     $stmt->execute([$user['user_id']]);
-    $userInfo = $stmt->fetch();
+    $userInfo = $stmt->fetch();  // Contains username, email, role
     
 } catch(PDOException $e) {
     $error = "Error fetching profile: " . $e->getMessage();
 }
 
-// Handle profile update
+// STEP 5: HANDLE FORM SUBMISSIONS (Update Profile / Change Password)
+// Process POST requests for profile and password updates
 if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    
+    // ACTION: Update personal profile information
+    // User can update phone, address, city, state, country
     if ($_POST['action'] === 'update_profile') {
         try {
+            // Update employee contact and location details
             $stmt = $conn->prepare("UPDATE employees SET 
                                    phone = ?, address = ?, city = ?, state = ?, country = ?
                                    WHERE user_id = ?");
@@ -49,10 +65,11 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
                 $user['user_id']
             ]);
             
+            // Log this activity for audit trail
             logActivity($user['user_id'], 'update_profile', 'employees', $employee['employee_id'], 'Updated personal information');
             $success = "Profile updated successfully!";
             
-            // Refresh data
+            // Refresh employee data from database
             $stmt = $conn->prepare("SELECT e.*, d.department_name 
                                    FROM employees e 
                                    LEFT JOIN departments d ON e.department_id = d.department_id 
@@ -64,26 +81,35 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
         }
     }
     
+    // ACTION: Change user password
+    // Validates current password and requires new password confirmation
     if ($_POST['action'] === 'change_password') {
         $currentPassword = $_POST['current_password'];
         $newPassword = $_POST['new_password'];
         $confirmPassword = $_POST['confirm_password'];
         
+        // STEP 5a: Validate new passwords match
         if ($newPassword !== $confirmPassword) {
             $error = "New passwords do not match!";
-        } elseif (strlen($newPassword) < 6) {
+        }
+        // STEP 5b: Validate minimum password length
+        elseif (strlen($newPassword) < 6) {
             $error = "Password must be at least 6 characters!";
         } else {
             try {
+                // STEP 5c: Fetch current password hash from database
                 $stmt = $conn->prepare("SELECT password FROM users WHERE user_id = ?");
                 $stmt->execute([$user['user_id']]);
                 $currentHash = $stmt->fetchColumn();
                 
+                // STEP 5d: Verify current password matches hash using bcrypt
                 if (password_verify($currentPassword, $currentHash)) {
+                    // STEP 5e: Hash new password with bcrypt and update database
                     $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
                     $stmt = $conn->prepare("UPDATE users SET password = ? WHERE user_id = ?");
                     $stmt->execute([$newHash, $user['user_id']]);
                     
+                    // Log password change for security audit
                     logActivity($user['user_id'], 'change_password', 'users', $user['user_id'], 'Changed password');
                     $success = "Password changed successfully!";
                 } else {

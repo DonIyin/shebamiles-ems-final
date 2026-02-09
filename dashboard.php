@@ -1,48 +1,60 @@
 <?php
+// DASHBOARD PAGE
+// PURPOSE: Main analytics dashboard with role-based views (admin vs employee)
+// ADMIN VIEW: Company-wide statistics, charts, recent employees, department distribution
+// EMPLOYEE VIEW: Personal statistics only (their attendance, leaves, performance)
+// WORKFLOW: Fetch statistics → Process chart data → Display dashboard with charts
+
+// STEP 1: Include auth and helper functions, require login
 require_once 'includes/auth.php';
 require_once 'includes/helpers.php';
-requireLogin();
+requireLogin();  // Redirect if not authenticated
 
+// STEP 2: Initialize database connection
 $db = new Database();
 $conn = $db->getConnection();
 
+// STEP 3: Check if database connection available
 if ($conn === null) {
     header('Location: login.php?db=missing');
     exit();
 }
 
-// Get statistics
+// STEP 4: FETCH STATISTICS - Role-Based Views
+// Different data based on user permission (admin vs employee)
 try {
-    // For employees, show only their own data
-    // For admins, show company-wide statistics
-    
+    // STEP 4a: Check user permission to determine view type
+    // hasPermission('view_analytics') is true only for admin users
     if (hasPermission('view_analytics')) {
-        // ADMIN VIEW - Company-wide statistics
-        // Total employees
+        // ==================== ADMIN VIEW ====================
+        // Admin sees company-wide statistics for all employees
+        
+        // Statistic 1: Total employees in company
         $stmt = $conn->query("SELECT COUNT(*) as total FROM employees");
         $totalEmployees = $stmt->fetch()['total'];
         
-        // Total departments
+        // Statistic 2: Total departments
         $stmt = $conn->query("SELECT COUNT(*) as total FROM departments");
         $totalDepartments = $stmt->fetch()['total'];
         
-        // Pending leave requests
+        // Statistic 3: Pending leave requests (not yet approved)
         $stmt = $conn->query("SELECT COUNT(*) as total FROM leave_requests WHERE status = 'pending'");
         $pendingLeaves = $stmt->fetch()['total'];
         
-        // Present today
+        // Statistic 4: Employees present today (marked as 'present' in attendance)
         $stmt = $conn->query("SELECT COUNT(*) as total FROM attendance WHERE date = CURDATE() AND status = 'present'");
         $presentToday = $stmt->fetch()['total'];
         
-        // Absent today
+        // Statistic 5: Employees absent today (marked as 'absent' in attendance)
         $stmt = $conn->query("SELECT COUNT(*) as total FROM attendance WHERE date = CURDATE() AND status = 'absent'");
         $absentToday = $stmt->fetch()['total'];
         
-        // Leave today
+        // Statistic 6: Employees on leave today (marked as 'leave' in attendance)
         $stmt = $conn->query("SELECT COUNT(*) as total FROM attendance WHERE date = CURDATE() AND status = 'leave'");
         $leaveToday = $stmt->fetch()['total'];
         
-        // Recent employees
+        // Data 1: Recent employees list (10 newest) with department info
+        // Used to display recent employee additions on dashboard
         $stmt = $conn->query("SELECT e.*, d.department_name 
                               FROM employees e 
                               LEFT JOIN departments d ON e.department_id = d.department_id 
@@ -50,14 +62,16 @@ try {
                               LIMIT 10");
         $recentEmployees = $stmt->fetchAll();
         
-        // Department distribution
+        // Data 2: Department distribution (count of employees per department)
+        // Used for department distribution chart
         $stmt = $conn->query("SELECT d.department_name, COUNT(e.employee_id) as count 
                               FROM departments d 
                               LEFT JOIN employees e ON d.department_id = e.department_id 
                               GROUP BY d.department_id");
         $departmentStats = $stmt->fetchAll();
         
-        // Attendance this month (last 30 days)
+        // Data 3: Attendance over last 30 days grouped by date and status
+        // Shows daily breakdown of present/absent/leave counts
         $stmt = $conn->query("SELECT DATE(date) as attendance_date, 
                               CASE WHEN status = 'present' THEN COUNT(*) ELSE 0 END as present_count,
                               CASE WHEN status = 'absent' THEN COUNT(*) ELSE 0 END as absent_count,
@@ -68,56 +82,62 @@ try {
                               ORDER BY attendance_date DESC");
         $attendanceData = $stmt->fetchAll();
         
-        // Leave statistics
+        // Data 4: Leave request status breakdown (pending/approved/rejected counts)
+        // Used for leave status pie chart
         $stmt = $conn->query("SELECT status, COUNT(*) as count FROM leave_requests GROUP BY status");
         $leaveStats = $stmt->fetchAll();
         
-        // Weekly attendance chart data
+        // Data 5: Weekly attendance trend (last 7 days)
+        // Shows total attendance count per day for line chart
         $stmt = $conn->query("SELECT DATE(date) as attendance_date, COUNT(*) as total FROM attendance 
                               WHERE date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
                               GROUP BY DATE(date) ORDER BY attendance_date");
         $weeklyAttendance = $stmt->fetchAll();
         
     } else {
-        // EMPLOYEE VIEW - Personal data only
+        // ==================== EMPLOYEE VIEW ====================
+        // Regular employees see only their personal data
+        
         $user = getCurrentUser();
         $employeeId = $user['employee_id'];
         
-        // Total employees (for reference)
+        // Statistic 1: Total employees (for reference only, not filtered to employee)
         $stmt = $conn->query("SELECT COUNT(*) as total FROM employees");
         $totalEmployees = $stmt->fetch()['total'];
         
-        // Total departments (for reference)
+        // Statistic 2: Total departments (for reference only)
         $stmt = $conn->query("SELECT COUNT(*) as total FROM departments");
         $totalDepartments = $stmt->fetch()['total'];
         
-        // My pending leave requests
+        // Statistic 3: My pending leave requests
+        // Uses employee_id parameter to filter only this employee's leaves
         $stmt = $conn->prepare("SELECT COUNT(*) as total FROM leave_requests WHERE status = 'pending' AND employee_id = ?");
         $stmt->execute([$employeeId]);
         $pendingLeaves = $stmt->fetch()['total'];
         
-        // My attendance today
+        // Statistic 4: My attendance today (if marked as present)
         $stmt = $conn->prepare("SELECT COUNT(*) as total FROM attendance WHERE date = CURDATE() AND employee_id = ? AND status = 'present'");
         $stmt->execute([$employeeId]);
         $presentToday = $stmt->fetch()['total'];
         
-        // My absence today
+        // Statistic 5: My absence today (if marked as absent)
         $stmt = $conn->prepare("SELECT COUNT(*) as total FROM attendance WHERE date = CURDATE() AND employee_id = ? AND status = 'absent'");
         $stmt->execute([$employeeId]);
         $absentToday = $stmt->fetch()['total'];
         
-        // My leave today
+        // Statistic 6: My leave today (if marked as leave)
         $stmt = $conn->prepare("SELECT COUNT(*) as total FROM attendance WHERE date = CURDATE() AND employee_id = ? AND status = 'leave'");
         $stmt->execute([$employeeId]);
         $leaveToday = $stmt->fetch()['total'];
         
-        // Recent employees (empty for regular employees)
+        // Data 1: Recent employees - EMPTY for regular employees (no access to employee list)
         $recentEmployees = [];
         
-        // Department distribution (empty for regular employees)
+        // Data 2: Department distribution - EMPTY for regular employees (no access to company data)
         $departmentStats = [];
         
-        // My attendance this month
+        // Data 3: My attendance over last 30 days
+        // Filtered by employee_id to show only this employee's attendance records
         $stmt = $conn->prepare("SELECT DATE(date) as attendance_date, 
                               CASE WHEN status = 'present' THEN COUNT(*) ELSE 0 END as present_count,
                               CASE WHEN status = 'absent' THEN COUNT(*) ELSE 0 END as absent_count,
@@ -129,12 +149,14 @@ try {
         $stmt->execute([$employeeId]);
         $attendanceData = $stmt->fetchAll();
         
-        // My leave statistics
+        // Data 4: My leave request status breakdown
+        // Shows my leaves grouped by status (pending/approved/rejected)
         $stmt = $conn->prepare("SELECT status, COUNT(*) as count FROM leave_requests WHERE employee_id = ? GROUP BY status");
         $stmt->execute([$employeeId]);
         $leaveStats = $stmt->fetchAll();
         
-        // My weekly attendance
+        // Data 5: My weekly attendance trend (last 7 days)
+        // Shows my attendance count per day for trend analysis
         $stmt = $conn->prepare("SELECT DATE(date) as attendance_date, COUNT(*) as total FROM attendance 
                               WHERE date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) AND employee_id = ?
                               GROUP BY DATE(date) ORDER BY attendance_date");
@@ -148,7 +170,13 @@ try {
 
 $user = getCurrentUser();
 
-// Prepare chart data
+// STEP 5: PREPARE CHART DATA
+// Convert database results into JavaScript-friendly arrays for Chart.js
+// Process department statistics for pie/doughnut chart
+
+// STEP 5a: Extract department names and counts into separate arrays
+// Input: $departmentStats is array of ['department_name' => 'x', 'count' => 'y']
+// Output: $deptNames and $deptCounts as indexed arrays for chart.js
 $deptNames = [];
 $deptCounts = [];
 foreach ($departmentStats as $dept) {
@@ -156,18 +184,24 @@ foreach ($departmentStats as $dept) {
     $deptCounts[] = $dept['count'];
 }
 
+// STEP 5b: Extract leave status data for pie chart
+// Converts statuses to display format and extracts counts
+// Colors: Green (pending), Yellow (approved), Red (rejected)
 $leaveStatusLabels = [];
 $leaveStatusCounts = [];
 $leaveStatusColors = ['#4CAF50', '#FFC107', '#F44336'];
 foreach ($leaveStats as $leave) {
-    $leaveStatusLabels[] = ucfirst($leave['status']);
+    $leaveStatusLabels[] = ucfirst($leave['status']);  // Convert 'pending' to 'Pending'
     $leaveStatusCounts[] = $leave['count'];
 }
 
+// STEP 5c: Extract weekly attendance data for line chart
+// Format dates as "Mon DD" and collect daily totals
+// Used for trending chart showing attendance pattern over 7 days
 $weekDates = [];
 $weekPresent = [];
 foreach ($weeklyAttendance as $att) {
-    $weekDates[] = date('M d', strtotime($att['attendance_date']));
+    $weekDates[] = date('M d', strtotime($att['attendance_date']));  // Format: 'Jan 15'
     $weekPresent[] = $att['total'];
 }
 ?>

@@ -1,28 +1,41 @@
 <?php
+// SYSTEM SETTINGS PAGE
+// PURPOSE: Manage company-wide configuration and system settings
+// PERMISSIONS: Admin only (requires 'view_settings' permission)
+// SETTINGS: Company info, work hours, leave policies, email configuration
+// WORKFLOW: Display settings → Update settings by section → Save to database
+
+// STEP 1: Start session and include config/auth/helpers
 session_start();
 require_once 'includes/config.php';
 require_once 'includes/auth.php';
 require_once 'includes/helpers.php';
 
-requireLogin();
-requirePermission('view_settings');
+// STEP 2: Require login and admin permission
+requireLogin();  // Redirect if not authenticated
+requirePermission('view_settings');  // Redirect if not admin
 
 $success_msg = '';
 $error_msg = '';
 
-// Database connection check
+// STEP 3: Check database connection
 if (!$db_connection) {
     header('Location: dashboard.php?db=missing');
     exit();
 }
 
-// Handle settings update
+// STEP 4: HANDLE SETTINGS UPDATE (POST Request)
+// Process form submissions from different settings sections
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $db = new Database();
         
+        // STEP 4a: Route to appropriate settings handler based on setting_action parameter
+        // Each case updates multiple related settings in one transaction
         switch ($_POST['setting_action'] ?? '') {
             case 'company_info':
+                // Update company identity and contact information
+                // These settings appear in emails, invoices, and system headers
                 updateSetting('company_name', $_POST['company_name'] ?? '', $_SESSION['user_id']);
                 updateSetting('company_email', $_POST['company_email'] ?? '', $_SESSION['user_id']);
                 updateSetting('company_phone', $_POST['company_phone'] ?? '', $_SESSION['user_id']);
@@ -34,6 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
                 
             case 'work_hours':
+                // Update working hour settings used for attendance tracking
+                // Late threshold determines if employee is marked 'late' vs 'present'
                 updateSetting('work_start_time', $_POST['work_start_time'] ?? '', $_SESSION['user_id']);
                 updateSetting('work_end_time', $_POST['work_end_time'] ?? '', $_SESSION['user_id']);
                 updateSetting('late_arrival_threshold', $_POST['late_threshold'] ?? '', $_SESSION['user_id']);
@@ -41,6 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
                 
             case 'leave_policies':
+                // Update annual leave allowances for different leave types
+                // These values determine how many days employees can take per year
                 updateSetting('annual_leave_days', $_POST['annual_leave'] ?? '', $_SESSION['user_id']);
                 updateSetting('sick_leave_days', $_POST['sick_leave'] ?? '', $_SESSION['user_id']);
                 updateSetting('personal_leave_days', $_POST['personal_leave'] ?? '', $_SESSION['user_id']);
@@ -48,6 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
                 
             case 'email_settings':
+                // Update SMTP configuration for automated email notifications
+                // Used by system to send leave approvals, alerts, reminders, etc.
                 updateSetting('smtp_host', $_POST['smtp_host'] ?? '', $_SESSION['user_id']);
                 updateSetting('smtp_port', $_POST['smtp_port'] ?? '', $_SESSION['user_id']);
                 updateSetting('smtp_username', $_POST['smtp_username'] ?? '', $_SESSION['user_id']);
@@ -57,20 +76,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
         }
         
+        // Log the settings update for audit trail
         logActivity($_SESSION['user_id'], 'UPDATE_SETTING', 'settings', $_POST['setting_action'] ?? 'unknown', 'Updated system settings');
     } catch (Exception $e) {
         $error_msg = 'Error updating settings: ' . $e->getMessage();
     }
 }
 
-// Get all settings
+// STEP 5: FETCH ALL SETTINGS FROM DATABASE
+// Load current settings values into array for display in forms
 $settings = [];
 try {
     $db = new Database();
+    // Query company_settings table to get all key-value pairs
     $query = "SELECT setting_key, setting_value FROM company_settings";
     $stmt = $db->conn->prepare($query);
     $stmt->execute();
     $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Convert to associative array for easy access in form: $settings['key'] = 'value'
     foreach ($result as $row) {
         $settings[$row['setting_key']] = $row['setting_value'];
     }

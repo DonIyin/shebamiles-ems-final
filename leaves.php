@@ -1,11 +1,20 @@
 <?php
-require_once 'includes/auth.php';
-requireLogin();
-requirePermission('view_leaves');
+// LEAVE MANAGEMENT PAGE
+// PURPOSE: Manage leave requests workflow (submit, approve, reject, view)
+// PERMISSIONS: Requires 'view_leaves' permission
+// ROLES: Employees can request leaves, Admins can approve/reject leaves
+// WORKFLOW: Submit request → Admin review → Approve/Reject → Track status
 
+// STEP 1: Include auth and require login with permission
+require_once 'includes/auth.php';
+requireLogin();  // Redirect if not authenticated
+requirePermission('view_leaves');  // Redirect if lacks leave permission
+
+// STEP 2: Initialize database connection
 $db = new Database();
 $conn = $db->getConnection();
 
+// STEP 3: Check database connection
 if ($conn === null) {
     $error = 'Database connection unavailable. Please import database/shebamiles_db.sql.';
 }
@@ -13,12 +22,19 @@ if ($conn === null) {
 $success = '';
 $error = '';
 
-// Handle new leave request
+// STEP 4: HANDLE FORM SUBMISSIONS (Request/Approve/Reject)
+// Process POST requests for leave actions
 if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    
+    // ACTION: Submit new leave request
     if ($_POST['action'] === 'request_leave') {
         try {
+            // Get current employee's ID from user session
+            // This ensures employees can only submit their own leave requests
             $employeeId = getCurrentUser()['employee_id'];
             
+            // Insert new leave request with pending status
+            // Status starts as 'pending' and awaits manager/admin approval
             $stmt = $conn->prepare("INSERT INTO leave_requests (employee_id, leave_type, start_date, end_date, reason) 
                                    VALUES (?, ?, ?, ?, ?)");
             $stmt->execute([
@@ -35,19 +51,24 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
         }
     }
     
-    // Handle approve/reject
+    // ACTION: Approve or Reject leave request
+    // Only admins with appropriate permissions can perform this action
     if (($_POST['action'] === 'approve' || $_POST['action'] === 'reject') && 
         (($_POST['action'] === 'approve' && hasPermission('approve_leave')) || 
          ($_POST['action'] === 'reject' && hasPermission('reject_leave')))) {
         try {
+            // Determine status based on action (approve → 'approved', reject → 'rejected')
             $status = $_POST['action'] === 'approve' ? 'approved' : 'rejected';
+            
+            // Update leave request with approval decision and metadata
+            // Sets: status, who approved (approved_by), when approved (approval_date), optional comments
             $stmt = $conn->prepare("UPDATE leave_requests 
                                    SET status = ?, approved_by = ?, approval_date = NOW(), comments = ?
                                    WHERE leave_id = ?");
             $stmt->execute([
                 $status,
-                getCurrentUser()['user_id'],
-                sanitize($_POST['comments'] ?? ''),
+                getCurrentUser()['user_id'],  // Record which admin/manager made decision
+                sanitize($_POST['comments'] ?? ''),  // Optional manager comments
                 $_POST['leave_id']
             ]);
             
@@ -58,15 +79,19 @@ if ($conn !== null && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act
     }
 }
 
-// Get leave requests
+// STEP 5: FETCH LEAVE REQUESTS
+// Display all or filtered leave requests based on user role and permissions
 try {
     if ($conn === null) {
         throw new Exception('Database connection unavailable. Please import database/shebamiles_db.sql.');
     }
     $user = getCurrentUser();
     
+    // STEP 5a: Check if user has permission to view all leave requests
+    // Admins see all requests | Regular employees see only their own
     if (hasPermission('view_all_leaves')) {
-        // Admin sees all requests
+        // ADMIN VIEW: Fetch all leave requests with complete employee and manager info
+        // JOINs get: employee details (code, name), department, and approver name
         $stmt = $conn->query("SELECT l.*, e.employee_code, e.first_name, e.last_name, 
                              d.department_name, u.username as approved_by_name
                              FROM leave_requests l
@@ -75,7 +100,8 @@ try {
                              LEFT JOIN users u ON l.approved_by = u.user_id
                              ORDER BY l.created_at DESC");
     } else {
-        // Employees see only their requests
+        // EMPLOYEE VIEW: Fetch only this employee's leave requests
+        // Filtered by employee_id to show only the user's leaves
         $stmt = $conn->prepare("SELECT l.*, e.employee_code, e.first_name, e.last_name, 
                                d.department_name, u.username as approved_by_name
                                FROM leave_requests l
@@ -89,7 +115,9 @@ try {
     
     $leaveRequests = $stmt->fetchAll();
     
-    // Calculate stats
+    // STEP 5b: Calculate leave request statistics
+    // Uses array_filter() to count requests by status
+    // Pending: awaiting approval | Approved: accepted | Rejected: denied
     $pending = count(array_filter($leaveRequests, fn($r) => $r['status'] === 'pending'));
     $approved = count(array_filter($leaveRequests, fn($r) => $r['status'] === 'approved'));
     $rejected = count(array_filter($leaveRequests, fn($r) => $r['status'] === 'rejected'));
